@@ -54,6 +54,7 @@ class MarketReader:
             }
         )
         if testnet:
+            self._feed.set_sandbox_mode(True)
             self._binance.set_sandbox_mode(True)
 
     async def close(self):
