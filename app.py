@@ -163,6 +163,33 @@ async def dashboard():
     total = s.get("total_trades", 0)
     wr = f"{wins/total*100:.1f}%" if total > 0 else "—"
 
+    # Quantitative Telemetry for live display
+    telem = s.get("latest_telemetry", {})
+    btc_bias = telem.get("btc_bias", "NEUTRAL")
+    btc_color = "#238636" if btc_bias == "BULLISH" else ("#ff7b72" if btc_bias == "BEARISH" else "#8b949e")
+
+    telem_rows = ""
+    for pair, d in telem.get("pairs", {}).items():
+        rsi = d.get("rsi", 50)
+        rsi_color = "#ff7b72" if rsi > 70 else ("#238636" if rsi < 30 else "#c9d1d9")
+        ema = d.get("ema", "NEUTRAL")
+        ema_color = "#238636" if ema == "BULLISH" else "#ff7b72"
+        bid_pct = d.get("bid_pct", 50)
+        bid_color = "#238636" if bid_pct >= 55 else ("#ff7b72" if bid_pct <= 45 else "#8b949e")
+        atr_pct = d.get("atr_pct", 0)
+        funding = d.get("funding", 0.01)
+
+        telem_rows += f"""
+        <tr>
+            <td><b>{pair}</b></td>
+            <td>{d.get('price', 0):.4f}</td>
+            <td style='color:{ema_color}; font-weight:bold;'>{ema}</td>
+            <td style='color:{rsi_color}; font-weight:bold;'>{rsi}</td>
+            <td>{atr_pct:.2f}%</td>
+            <td style='color:{bid_color}; font-weight:bold;'>{bid_pct:.1f}% Bids</td>
+            <td>{funding:+.4f}%</td>
+        </tr>"""
+
     # Last 20 log lines for inline display
     recent_logs = list(_log_buffer)[-20:]
     log_html = "".join(f"<div style='font-size:0.75em;color:#8b949e'>{line}</div>" for line in recent_logs)
@@ -217,6 +244,12 @@ async def dashboard():
         <table>
             <tr><th>Par</th><th>Lado</th><th>Entrada</th><th>Stop Loss / Take Profit</th><th>PnL Flotante</th></tr>
             {pos_rows if pos_rows else "<tr><td colspan='5' style='color:#8b949e; text-align:center;'>No hay posiciones abiertas</td></tr>"}
+        </table>
+
+        <h2>📡 Telemetría Cuantitativa en Tiempo Real <span style='font-size:0.8em; color:{btc_color};'>[BTC Bias: {btc_bias}]</span></h2>
+        <table>
+            <tr><th>Par</th><th>Precio</th><th>EMA Momentum</th><th>RSI (14)</th><th>ATR (Ruido)</th><th>Presión Libro</th><th>Funding (8h)</th></tr>
+            {telem_rows if telem_rows else "<tr><td colspan='7' style='color:#8b949e; text-align:center;'>Recopilando telemetría...</td></tr>"}
         </table>
 
         <h2>Razonamiento Cuantitativo de Groq (Último Ciclo)</h2>

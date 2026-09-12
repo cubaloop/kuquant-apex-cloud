@@ -30,6 +30,7 @@ class GroqController:
         """Merge market snapshot + account state into a single JSON context for Groq."""
         context = {
             "timestamp": snapshot.get("timestamp"),
+            "btc_market_bias": snapshot.get("market", {}).get("_btc_bias", "NEUTRAL"),
             "OPERATOR_DIRECTIVE": state.get("operator_directive", "Trade autonomously as an expert quantitative hedge fund manager. Minimize commission drag, prioritize R >= 2."),
             "account": state.get("account", {}),
             "open_positions": state.get("open_positions", []),
@@ -37,16 +38,20 @@ class GroqController:
             "market": {},
         }
 
-        # Compact market data: only what Groq needs
+        # Compact market data: pass full quantitative telemetry
         for pair, data in snapshot.get("market", {}).items():
-            if data:
+            if data and not pair.startswith("_"):
                 context["market"][pair] = {
                     "price": data.get("price"),
-                    "change_pct_window": data.get("change_pct_window"),
-                    "close_20": data.get("close_20", []),
+                    "trend_15m": data.get("trend_15m"),
+                    "rsi_14": data.get("rsi_14"),
+                    "atr_pct": data.get("atr_pct"),
+                    "ema_momentum": data.get("ema_momentum"),
+                    "orderbook_bid_pct": data.get("orderbook_bid_pct"),
+                    "funding_rate_pct": data.get("funding_rate_pct", 0.0100),
                     "vol_ratio": data.get("vol_ratio"),
                     "spread_pct": data.get("spread_pct"),
-                    "trend_15m": data.get("trend_15m"),
+                    "close_20": data.get("close_20", []),
                 }
 
         return json.dumps(context, indent=None, separators=(",", ":"))

@@ -60,6 +60,24 @@ async def run_engine():
                 logger.info("📡 Fetching market snapshot...")
                 snapshot = await reader.get_full_snapshot()
 
+                # Update latest telemetry in state for dashboard
+                mkt = snapshot.get("market", {})
+                state.latest_telemetry = {
+                    "btc_bias": mkt.get("_btc_bias", "NEUTRAL"),
+                    "pairs": {
+                        p: {
+                            "price": d.get("price"),
+                            "rsi": d.get("rsi_14"),
+                            "atr_pct": d.get("atr_pct"),
+                            "ema": d.get("ema_momentum"),
+                            "bid_pct": d.get("orderbook_bid_pct"),
+                            "funding": d.get("funding_rate_pct", 0.01),
+                        }
+                        for p, d in mkt.items()
+                        if not p.startswith("_") and isinstance(d, dict)
+                    },
+                }
+
                 # 2. Sync state with exchange (handle SL/TP hits while sleeping, and match active SL/TP)
                 exchange_positions = snapshot["account"].get("positions", [])
                 open_algo_orders = snapshot["account"].get("open_algo_orders", [])

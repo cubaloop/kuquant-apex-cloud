@@ -27,7 +27,13 @@ class StateManager:
         self.total_trades: int = 0
         self.winning_trades: int = 0
         # Direct operator instructions to Groq
-        self.operator_directive: str = "Opera como gestor cuantitativo experto. Deja desarrollar las operaciones para absorber las comisiones de Binance. Busca objetivos R >= 1.8 a 2.5."
+        self.operator_directive: str = (
+            "El operador ha integrado telemetría cuantitativa avanzada: ATR de volatilidad, RSI-14, "
+            "presión de libro de órdenes (Bid/Ask Imbalance), EMAs 9/21, tasa de financiación y sesgo de BTC. "
+            "Explica al operador en tu comentario inicial: ¿Cómo integras estos nuevos datos en tu toma de decisiones "
+            "y crees que te benefician o te perjudican frente a las comisiones?"
+        )
+        self.latest_telemetry: dict = {}
 
     def set_operator_directive(self, directive: str):
         self.operator_directive = directive.strip()
@@ -232,4 +238,5 @@ class StateManager:
             "last_decision_time": self.last_decision_time,
             "last_groq_decisions": self.last_groq_decisions,
             "operator_directive": self.operator_directive,
+            "latest_telemetry": self.latest_telemetry,
         }
