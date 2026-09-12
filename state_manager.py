@@ -26,6 +26,11 @@ class StateManager:
         self.last_groq_decisions: list[dict] = []
         self.total_trades: int = 0
         self.winning_trades: int = 0
+        # Direct operator instructions to Groq
+        self.operator_directive: str = "Opera como gestor cuantitativo experto. Deja desarrollar las operaciones para absorber las comisiones de Binance. Busca objetivos R >= 1.8 a 2.5."
+
+    def set_operator_directive(self, directive: str):
+        self.operator_directive = directive.strip()
 
     # ─── Position Management ────────────────────────────────────────────────
 
@@ -212,6 +217,7 @@ class StateManager:
             },
             "open_positions": open_pos,
             "recent_trades": self.trade_history[:10],
+            "operator_directive": self.operator_directive,
         }
 
     # ─── Dashboard Data ────────────────────────────────────────────────────
@@ -225,4 +231,5 @@ class StateManager:
             "last_commentary": self.last_commentary,
             "last_decision_time": self.last_decision_time,
             "last_groq_decisions": self.last_groq_decisions,
+            "operator_directive": self.operator_directive,
         }

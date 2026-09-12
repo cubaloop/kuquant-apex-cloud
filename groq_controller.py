@@ -30,6 +30,7 @@ class GroqController:
         """Merge market snapshot + account state into a single JSON context for Groq."""
         context = {
             "timestamp": snapshot.get("timestamp"),
+            "OPERATOR_DIRECTIVE": state.get("operator_directive", "Trade autonomously as an expert quantitative hedge fund manager. Minimize commission drag, prioritize R >= 2."),
             "account": state.get("account", {}),
             "open_positions": state.get("open_positions", []),
             "recent_trades": state.get("recent_trades", []),

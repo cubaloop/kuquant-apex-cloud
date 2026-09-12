@@ -3,6 +3,7 @@ app.py
 FastAPI application:
 - Starts the engine as a background asyncio task on startup
 - Exposes /health (keep-alive for Render), /status (dashboard), /logs (debug)
+- Exposes /directive (POST: send direct orders to Groq)
 - Self-pings /health every 14 minutes to prevent Render free-tier sleep
 """
 
@@ -15,20 +16,24 @@ import time
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi import FastAPI, Form
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 
 load_dotenv()
 
 # ─── In-memory log ring buffer (last 200 lines) ─────────────────────────────
 _log_buffer: collections.deque = collections.deque(maxlen=200)
 
+
 class _BufferHandler(logging.Handler):
     def emit(self, record):
         _log_buffer.append(self.format(record))
 
+
 _buf_handler = _BufferHandler()
-_buf_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s — %(message)s", "%H:%M:%S"))
+_buf_handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(name)s — %(message)s", "%H:%M:%S")
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +45,7 @@ logger = logging.getLogger("app")
 
 from engine_loop import run_engine, state
 
-app = FastAPI(title="KuQuant Apex Cloud", version="3.0.0")
+app = FastAPI(title="KuQuant Apex Cloud", version="3.1.0")
 _engine_task: asyncio.Task | None = None
 
 
@@ -110,35 +115,45 @@ async def logs():
     return JSONResponse(content={"logs": list(_log_buffer)})
 
 
+@app.post("/directive")
+async def set_directive(directive: str = Form(...)):
+    """Allows the user to send direct instructions to Groq."""
+    state.set_operator_directive(directive)
+    logger.info(f"👤 NUEVA DIRECTRIZ DEL OPERADOR: {directive}")
+    return RedirectResponse(url="/", status_code=303)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     s = state.get_status()
     pos_rows = ""
     for p in s.get("positions", []):
+        pnl_val = p.get("unrealized_pnl", 0)
+        pnl_color = "green" if pnl_val >= 0 else "#ff7b72"
         pos_rows += f"""
         <tr>
-            <td>{p['pair']}</td>
+            <td><b>{p['pair']}</b></td>
             <td><b>{p['side']}</b></td>
             <td>{p.get('entry_price', 0):.4f}</td>
-            <td>SL: {p.get('sl', 0):.4f} / TP: {p.get('tp', 0):.4f}</td>
-            <td>{p.get('unrealized_pnl', 'N/A')}</td>
+            <td>SL: <b>{p.get('sl', 0):.4f}</b> / TP: <b>{p.get('tp', 0):.4f}</b></td>
+            <td style='color:{pnl_color}; font-weight:bold;'>{pnl_val:+.2f} USDT</td>
         </tr>"""
 
     trade_rows = ""
     for t in s.get("trade_history", [])[:8]:
-        color = "green" if t.get("result") == "WIN" else "red"
+        color = "#238636" if t.get("result") == "WIN" else "#ff7b72"
         trade_rows += f"""
         <tr>
             <td>{t['pair']}</td>
             <td>{t['side']}</td>
-            <td style='color:{color}'>{t['result']} ({t['pnl_pct']:+.2f}%)</td>
+            <td style='color:{color}; font-weight:bold;'>{t['result']} ({t['pnl_pct']:+.2f}%)</td>
             <td>{t.get('duration_min', 0)}m</td>
-            <td style='font-size:0.8em'>{t.get('reason','')[:50]}</td>
+            <td style='font-size:0.85em; color:#8b949e;'>{t.get('reason','')[:60]}</td>
         </tr>"""
 
     decisions_html = ""
     for d in s.get("last_groq_decisions", []):
-        decisions_html += f"<li><b>{d.get('action')}</b> {d.get('pair','')} — {d.get('reason','')}</li>"
+        decisions_html += f"<li><b>{d.get('action')}</b> {d.get('pair','')} — <span style='color:#8b949e'>{d.get('reason','')}</span></li>"
 
     wins = s.get("winning_trades", 0)
     total = s.get("total_trades", 0)
@@ -148,50 +163,73 @@ async def dashboard():
     recent_logs = list(_log_buffer)[-20:]
     log_html = "".join(f"<div style='font-size:0.75em;color:#8b949e'>{line}</div>" for line in recent_logs)
 
+    current_directive = s.get("operator_directive", "")
+
     return f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>KuQuant Apex Cloud</title>
-        <meta http-equiv='refresh' content='20'>
+        <title>KuQuant Apex Cloud — Brain Console</title>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
         <style>
-            body {{ font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 20px; }}
-            h1 {{ color: #58a6ff; }}
-            h2 {{ color: #8b949e; border-bottom: 1px solid #30363d; padding-bottom: 6px; }}
-            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
-            th {{ background: #161b22; color: #58a6ff; padding: 8px; text-align: left; }}
-            td {{ padding: 8px; border-bottom: 1px solid #21262d; }}
-            .badge {{ background: #238636; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; }}
-            .commentary {{ background: #161b22; border-left: 3px solid #58a6ff; padding: 10px; margin: 10px 0; }}
-            .logbox {{ background: #0d1117; border: 1px solid #30363d; padding: 10px; border-radius:6px; max-height:200px; overflow-y:auto; }}
-            ul {{ background: #161b22; padding: 10px 20px; border-radius: 6px; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #0d1117; color: #c9d1d9; padding: 20px; max-width: 1100px; margin: auto; }}
+            h1 {{ color: #58a6ff; display: flex; align-items: center; gap: 10px; }}
+            h2 {{ color: #8b949e; border-bottom: 1px solid #30363d; padding-bottom: 6px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; letter-spacing: 0.5px; }}
+            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; background: #161b22; border-radius: 8px; overflow: hidden; }}
+            th {{ background: #21262d; color: #58a6ff; padding: 10px; text-align: left; font-size: 0.9em; }}
+            td {{ padding: 10px; border-bottom: 1px solid #30363d; font-size: 0.9em; }}
+            .badge {{ background: #238636; color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.7em; vertical-align: middle; }}
+            .commentary {{ background: #161b22; border-left: 4px solid #58a6ff; padding: 14px; margin: 12px 0; border-radius: 4px; font-size: 0.95em; line-height: 1.5; }}
+            .logbox {{ background: #010409; border: 1px solid #30363d; padding: 12px; border-radius: 6px; max-height: 220px; overflow-y: auto; font-family: monospace; }}
+            ul {{ background: #161b22; padding: 12px 24px; border-radius: 6px; list-style: square; }}
+            li {{ margin-bottom: 6px; }}
+            .console-box {{ background: #161b22; border: 1px solid #388bfd; padding: 16px; border-radius: 8px; margin: 20px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }}
+            textarea {{ width: 100%; box-sizing: border-box; background: #0d1117; color: #f0f6fc; border: 1px solid #30363d; border-radius: 6px; padding: 10px; font-size: 0.95em; font-family: inherit; resize: vertical; }}
+            textarea:focus {{ border-color: #58a6ff; outline: none; }}
+            button {{ background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; font-size: 0.95em; }}
+            button:hover {{ background: #2ea043; }}
         </style>
     </head>
     <body>
-        <h1>🤖 KuQuant Apex Cloud <span class='badge'>LIVE</span></h1>
-        <p>Last updated: {s.get('last_decision_time', 'N/A')} | Trades: {total} | Win Rate: {wr}</p>
+        <h1>🤖 KuQuant Apex Cloud <span class='badge'>AUTONOMOUS GROQ</span></h1>
+        <p style='color:#8b949e; font-size:0.9em;'>Última actualización: <b>{s.get('last_decision_time', 'N/A')}</b> | Trades sesión: <b>{total}</b> | Win Rate: <b>{wr}</b></p>
 
-        <h2>Open Positions ({len(s.get('positions', []))})</h2>
+        <!-- CONSOLA DIRECTA DEL OPERADOR -->
+        <div class='console-box'>
+            <h3 style='margin-top:0; color:#58a6ff;'>🗣️ Consola de Instrucciones Directas para Groq</h3>
+            <p style='font-size:0.85em; color:#8b949e; margin-bottom:10px;'>
+                Escribe aquí tus órdenes en lenguaje natural. En el siguiente ciclo, Groq leerá esta directriz y ajustará su estrategia inmediatamente.
+            </p>
+            <form action="/directive" method="post">
+                <textarea name="directive" rows="2" placeholder="Ej: No cierres posiciones antes de 10 minutos para absorber comisiones. Prioriza R >= 2 y trailing stop.">{current_directive}</textarea>
+                <div style='margin-top:10px; display:flex; justify-content:space-between; align-items:center;'>
+                    <button type="submit">🚀 Enviar Instrucción Directa a Groq</button>
+                    <span style='font-size:0.8em; color:#8b949e;'>Se aplica en el ciclo inmediato</span>
+                </div>
+            </form>
+        </div>
+
+        <h2>Posiciones Activas ({len(s.get('positions', []))})</h2>
         <table>
-            <tr><th>Pair</th><th>Side</th><th>Entry</th><th>SL / TP</th><th>PnL</th></tr>
-            {pos_rows if pos_rows else "<tr><td colspan='5' style='color:#8b949e'>No open positions</td></tr>"}
+            <tr><th>Par</th><th>Lado</th><th>Entrada</th><th>Stop Loss / Take Profit</th><th>PnL Flotante</th></tr>
+            {pos_rows if pos_rows else "<tr><td colspan='5' style='color:#8b949e; text-align:center;'>No hay posiciones abiertas</td></tr>"}
         </table>
 
-        <h2>Groq Last Commentary</h2>
-        <div class='commentary'>{s.get('last_commentary') or 'Awaiting first cycle...'}</div>
+        <h2>Razonamiento Cuantitativo de Groq (Último Ciclo)</h2>
+        <div class='commentary'>{s.get('last_commentary') or 'Esperando primer ciclo...'}</div>
 
-        <h2>Last Decisions</h2>
-        <ul>{decisions_html or '<li>None yet</li>'}</ul>
+        <h2>Decisiones del Ciclo</h2>
+        <ul>{decisions_html or '<li>Sin decisiones aún</li>'}</ul>
 
-        <h2>Recent Trade History</h2>
+        <h2>Historial Reciente de Operaciones</h2>
         <table>
-            <tr><th>Pair</th><th>Side</th><th>Result</th><th>Duration</th><th>Reason</th></tr>
-            {trade_rows if trade_rows else "<tr><td colspan='5' style='color:#8b949e'>No trades yet</td></tr>"}
+            <tr><th>Par</th><th>Lado</th><th>Resultado</th><th>Duración</th><th>Tesis de Salida</th></tr>
+            {trade_rows if trade_rows else "<tr><td colspan='5' style='color:#8b949e; text-align:center;'>Sin operaciones cerradas aún</td></tr>"}
         </table>
 
-        <h2>Engine Logs (last 20)</h2>
-        <div class='logbox'>{log_html or '<div style="color:#8b949e">No logs yet</div>'}</div>
-        <p style='font-size:0.8em;color:#8b949e'>Full logs: <a href='/logs' style='color:#58a6ff'>/logs</a> | Auto-refresh: 20s</p>
+        <h2>Logs en Vivo del Motor (Últimas 20 líneas)</h2>
+        <div class='logbox'>{log_html or '<div style="color:#8b949e">Sin logs</div>'}</div>
+        <p style='font-size:0.8em; color:#8b949e; margin-top:8px;'>Logs completos: <a href='/logs' style='color:#58a6ff'>/logs</a> | Estado JSON: <a href='/status' style='color:#58a6ff'>/status</a></p>
     </body>
     </html>
     """
