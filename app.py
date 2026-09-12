@@ -43,7 +43,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app")
 
-from engine_loop import run_engine, state
+from engine_loop import run_engine, state, trigger_immediate_cycle
 
 app = FastAPI(title="KuQuant Apex Cloud", version="3.1.0")
 _engine_task: asyncio.Task | None = None
@@ -123,6 +123,7 @@ async def set_directive(request: Request):
     if directive:
         state.set_operator_directive(directive)
         logger.info(f"👤 NUEVA DIRECTRIZ DEL OPERADOR: {directive}")
+        trigger_immediate_cycle()
     return RedirectResponse(url="/", status_code=303)
 
 

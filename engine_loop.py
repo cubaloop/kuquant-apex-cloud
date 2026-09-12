@@ -20,6 +20,12 @@ logger = logging.getLogger("engine_loop")
 # Shared state instance (imported by app.py for /status endpoint)
 state = StateManager()
 _running = False
+_wake_event = asyncio.Event()
+
+
+def trigger_immediate_cycle():
+    """Wakes up the engine loop immediately when operator submits a directive."""
+    _wake_event.set()
 
 
 async def run_engine():
@@ -93,11 +99,16 @@ async def run_engine():
             except Exception as e:
                 logger.error(f"Cycle error (will retry in {next_check}s): {e}", exc_info=True)
 
-            # 6. Wait for next_check_seconds (Groq controls this)
+            # 6. Wait for next_check_seconds or wake immediately on operator directive
             elapsed = (datetime.now(timezone.utc) - cycle_start).total_seconds()
             wait = max(10, next_check - elapsed)
             logger.info(f"⏱  Next cycle in {wait:.0f}s (Groq requested {next_check}s)")
-            await asyncio.sleep(wait)
+            try:
+                await asyncio.wait_for(_wake_event.wait(), timeout=wait)
+                _wake_event.clear()
+                logger.info("⚡ Ciclo activado INMEDIATAMENTE por nueva instrucción del operador")
+            except asyncio.TimeoutError:
+                pass
 
     except asyncio.CancelledError:
         logger.info("Engine loop cancelled.")
