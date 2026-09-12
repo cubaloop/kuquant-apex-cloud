@@ -16,7 +16,7 @@ import time
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 
 load_dotenv()
@@ -116,10 +116,13 @@ async def logs():
 
 
 @app.post("/directive")
-async def set_directive(directive: str = Form(...)):
+async def set_directive(request: Request):
     """Allows the user to send direct instructions to Groq."""
-    state.set_operator_directive(directive)
-    logger.info(f"👤 NUEVA DIRECTRIZ DEL OPERADOR: {directive}")
+    form = await request.form()
+    directive = str(form.get("directive", "")).strip()
+    if directive:
+        state.set_operator_directive(directive)
+        logger.info(f"👤 NUEVA DIRECTRIZ DEL OPERADOR: {directive}")
     return RedirectResponse(url="/", status_code=303)
 
 
