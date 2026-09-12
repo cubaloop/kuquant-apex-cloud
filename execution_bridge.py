@@ -112,8 +112,7 @@ class ExecutionBridge:
                     "algoType": "CONDITIONAL",
                     "type": order_type,
                     "triggerPrice": str(price_str),
-                    "quantity": str(qty_str),
-                    "reduceOnly": "true",
+                    "closePosition": "true",
                 },
             )
             algo_id = str(res.get("algoId", ""))
