@@ -93,8 +93,8 @@ class MarketReader:
             # Price change over window
             change_pct = round((closes_1m[-1] - closes_1m[0]) / closes_1m[0] * 100, 3)
 
-            # Orderbook for spread
-            ob = await self._feed.fetch_order_book(pair, limit=1)
+            # Orderbook for spread (Binance depth requires limit in [5, 10, 20, 50, 100, 500, 1000])
+            ob = await self._feed.fetch_order_book(pair, limit=5)
             best_bid = ob["bids"][0][0] if ob["bids"] else closes_1m[-1]
             best_ask = ob["asks"][0][0] if ob["asks"] else closes_1m[-1]
             spread_pct = round((best_ask - best_bid) / best_bid * 100, 4)
