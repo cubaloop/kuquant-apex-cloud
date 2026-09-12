@@ -147,22 +147,21 @@ class MarketReader:
                     }
                 )
 
-            # Fetch open orders (SL/TP orders placed by the bot)
+            # Fetch open orders (single API call for all symbols)
             open_orders = []
             try:
-                for pair in UNIVERSE:
-                    orders = await self._binance.fetch_open_orders(pair)
-                    for o in orders:
-                        open_orders.append(
-                            {
-                                "id": o["id"],
-                                "pair": o["symbol"],
-                                "type": o["type"],
-                                "side": o["side"],
-                                "price": o.get("stopPrice") or o.get("price"),
-                                "amount": o.get("amount"),
-                            }
-                        )
+                orders = await self._binance.fetch_open_orders()
+                for o in orders:
+                    open_orders.append(
+                        {
+                            "id": o["id"],
+                            "pair": o["symbol"],
+                            "type": o["type"],
+                            "side": o["side"],
+                            "price": o.get("stopPrice") or o.get("price"),
+                            "amount": o.get("amount"),
+                        }
+                    )
             except Exception as e:
                 logger.warning(f"Error fetching open orders: {e}")
 
