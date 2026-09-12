@@ -54,14 +54,15 @@ async def run_engine():
                 logger.info("📡 Fetching market snapshot...")
                 snapshot = await reader.get_full_snapshot()
 
-                # 2. Sync state with exchange (handle SL/TP hits while sleeping)
+                # 2. Sync state with exchange (handle SL/TP hits while sleeping, and match active SL/TP)
                 exchange_positions = snapshot["account"].get("positions", [])
-                state.sync_from_exchange(exchange_positions)
+                open_algo_orders = snapshot["account"].get("open_algo_orders", [])
+                state.sync_from_exchange(exchange_positions, open_algo_orders)
 
-                # 3. Build state context for Groq
+                # 3. Build state context for Groq (with live prices, PnL %, duration, active SL/TP)
                 account_balance = snapshot["account"].get("free_usdt", 0)
                 unrealized_pnl = snapshot["account"].get("unrealized_pnl", 0)
-                groq_state = state.get_groq_state(account_balance, unrealized_pnl)
+                groq_state = state.get_groq_state(account_balance, unrealized_pnl, snapshot.get("market"))
 
                 # 4. Ask Groq for decisions
                 logger.info(
