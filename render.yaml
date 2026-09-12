@@ -16,6 +16,6 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
-        value: "compound-beta"
+        value: "groq/compound-mini"
       - key: RENDER_EXTERNAL_URL
         sync: false
