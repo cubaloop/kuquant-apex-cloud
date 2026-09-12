@@ -2,7 +2,7 @@
 execution_bridge.py
 Executes Groq's decisions on Binance Futures (testnet or live).
 Handles OPEN, CLOSE, ADJUST_SL, ADJUST_TP.
-Tracks SL/TP order IDs per position.
+Uses Binance's native /fapi/v1/algoOrder endpoint for real STOP_MARKET and TAKE_PROFIT_MARKET conditional orders.
 """
 
 import asyncio
@@ -15,7 +15,6 @@ from state_manager import StateManager
 
 logger = logging.getLogger("execution_bridge")
 
-# Trading config
 LEVERAGE = 5
 POSITION_EQUITY_PCT = 0.20   # 20% of free balance per trade
 MAX_POSITIONS = 2
@@ -33,7 +32,10 @@ class ExecutionBridge:
             {
                 "apiKey": api_key,
                 "secret": api_secret,
-                "options": {"defaultType": "future"},
+                "options": {
+                    "defaultType": "future",
+                    "warnOnFetchOpenOrdersWithoutSymbol": False,
+                },
             }
         )
         if testnet:
@@ -56,7 +58,10 @@ class ExecutionBridge:
     # ─── Helpers ───────────────────────────────────────────────────────────
 
     def _close_side(self, open_side: str) -> str:
-        return "sell" if open_side == "LONG" else "buy"
+        return "sell" if open_side.upper() == "LONG" else "buy"
+
+    def _to_binance_symbol(self, pair: str) -> str:
+        return pair.replace(":USDT", "").replace("/", "")
 
     async def _set_leverage(self, pair: str, leverage: int):
         try:
@@ -72,7 +77,6 @@ class ExecutionBridge:
             notional = free_usdt * POSITION_EQUITY_PCT * LEVERAGE
             market = self._exchange.market(pair)
             amount = notional / price
-            # Precision
             amount = float(self._exchange.amount_to_precision(pair, amount))
             min_qty = market.get("limits", {}).get("amount", {}).get("min", 0.001)
             if amount < min_qty:
@@ -83,10 +87,63 @@ class ExecutionBridge:
             logger.error(f"Error calculating position size for {pair}: {e}")
             return 0.0
 
+    # ─── Native Algo Order Helpers (Binance Futures Algo API) ───────────────
+
+    async def _place_algo_order(
+        self, pair: str, side: str, order_type: str, trigger_price: float, amount: float
+    ) -> str:
+        """
+        Places STOP_MARKET or TAKE_PROFIT_MARKET conditional order
+        via Binance's native /fapi/v1/algoOrder endpoint.
+        """
+        try:
+            raw_sym = self._to_binance_symbol(pair)
+            # Format trigger price with appropriate precision
+            price_str = self._exchange.price_to_precision(pair, trigger_price)
+            qty_str = self._exchange.amount_to_precision(pair, amount)
+
+            res = await self._exchange.request(
+                "algoOrder",
+                api="fapiPrivate",
+                method="POST",
+                params={
+                    "symbol": raw_sym,
+                    "side": side.upper(),
+                    "algoType": "CONDITIONAL",
+                    "type": order_type,
+                    "triggerPrice": str(price_str),
+                    "quantity": str(qty_str),
+                    "reduceOnly": "true",
+                },
+            )
+            algo_id = str(res.get("algoId", ""))
+            logger.info(f"   🎯 {order_type} placed @ {price_str} (algoId: {algo_id})")
+            return algo_id
+        except Exception as e:
+            logger.error(f"   ❌ Failed to place {order_type} for {pair}: {e}")
+            return ""
+
+    async def _cancel_algo_order(self, algo_id: str) -> bool:
+        """Cancels a conditional algo order on Binance Futures."""
+        if not algo_id:
+            return False
+        try:
+            await self._exchange.request(
+                "algoOrder",
+                api="fapiPrivate",
+                method="DELETE",
+                params={"algoId": str(algo_id)},
+            )
+            logger.info(f"   🗑️ Cancelled algoOrder {algo_id}")
+            return True
+        except Exception as e:
+            logger.warning(f"   Could not cancel algoOrder {algo_id}: {e}")
+            return False
+
     # ─── Core Actions ───────────────────────────────────────────────────────
 
     async def open_position(self, pair: str, side: str, sl: float, tp: float) -> bool:
-        """Open a new position with immediate SL and TP stop orders."""
+        """Open a new position with immediate native SL and TP algo orders."""
         if len(self._state.positions) >= MAX_POSITIONS:
             logger.warning(f"Max positions ({MAX_POSITIONS}) reached. Skipping OPEN {pair}.")
             return False
@@ -107,10 +164,10 @@ class ExecutionBridge:
                 logger.error(f"Could not calculate valid size for {pair}.")
                 return False
 
-            order_side = "buy" if side == "LONG" else "sell"
+            order_side = "buy" if side.upper() == "LONG" else "sell"
             close_side = self._close_side(side)
 
-            # Market entry
+            # 1. Market entry
             entry_order = await self._exchange.create_order(
                 symbol=pair,
                 type="market",
@@ -120,48 +177,32 @@ class ExecutionBridge:
             entry_price = entry_order.get("average") or price
             logger.info(f"✅ OPENED {side} {pair} | size: {amount} | entry: {entry_price:.4f}")
 
-            # SL order
+            # 2. Native Stop Loss Algo Order
             sl_order_id = ""
+            if sl > 0:
+                sl_order_id = await self._place_algo_order(
+                    pair=pair,
+                    side=close_side,
+                    order_type="STOP_MARKET",
+                    trigger_price=sl,
+                    amount=amount,
+                )
+
+            # 3. Native Take Profit Algo Order
             tp_order_id = ""
-            try:
-                sl_order = await self._exchange.create_order(
-                    symbol=pair,
-                    type="STOP_MARKET",
+            if tp > 0:
+                tp_order_id = await self._place_algo_order(
+                    pair=pair,
                     side=close_side,
+                    order_type="TAKE_PROFIT_MARKET",
+                    trigger_price=tp,
                     amount=amount,
-                    params={
-                        "stopPrice": sl,
-                        "reduceOnly": True,
-                        "workingType": "MARK_PRICE",
-                    },
                 )
-                sl_order_id = sl_order.get("id", "")
-                logger.info(f"   SL order placed @ {sl:.4f} (id: {sl_order_id})")
-            except Exception as e:
-                logger.error(f"   Failed to place SL order: {e}")
 
-            # TP order
-            try:
-                tp_order = await self._exchange.create_order(
-                    symbol=pair,
-                    type="TAKE_PROFIT_MARKET",
-                    side=close_side,
-                    amount=amount,
-                    params={
-                        "stopPrice": tp,
-                        "reduceOnly": True,
-                        "workingType": "MARK_PRICE",
-                    },
-                )
-                tp_order_id = tp_order.get("id", "")
-                logger.info(f"   TP order placed @ {tp:.4f} (id: {tp_order_id})")
-            except Exception as e:
-                logger.error(f"   Failed to place TP order: {e}")
-
-            # Update state
+            # 4. Update local state
             self._state.open_position(
                 pair=pair,
-                side=side,
+                side=side.upper(),
                 entry_price=entry_price,
                 size=amount,
                 sl=sl,
@@ -176,21 +217,20 @@ class ExecutionBridge:
             return False
 
     async def close_position(self, pair: str, reason: str = "") -> bool:
-        """Close an existing position at market price, canceling all open orders."""
+        """Close an existing position at market price, canceling all open algo orders."""
         if pair not in self._state.positions:
             logger.warning(f"No position found for {pair} in state.")
             return False
 
         pos = self._state.positions[pair]
         try:
-            # Cancel SL/TP orders first
-            for order_id in [pos.get("sl_order_id"), pos.get("tp_order_id")]:
-                if order_id:
-                    try:
-                        await self._exchange.cancel_order(order_id, pair)
-                        logger.info(f"   Cancelled order {order_id}")
-                    except Exception as e:
-                        logger.warning(f"   Could not cancel order {order_id}: {e}")
+            await self._ensure_markets()
+
+            # Cancel SL & TP algo orders first
+            if pos.get("sl_order_id"):
+                await self._cancel_algo_order(pos["sl_order_id"])
+            if pos.get("tp_order_id"):
+                await self._cancel_algo_order(pos["tp_order_id"])
 
             close_side = self._close_side(pos["side"])
             close_order = await self._exchange.create_order(
@@ -222,29 +262,20 @@ class ExecutionBridge:
         old_sl_id = pos.get("sl_order_id", "")
 
         try:
-            # Cancel old SL
+            await self._ensure_markets()
             if old_sl_id:
-                try:
-                    await self._exchange.cancel_order(old_sl_id, pair)
-                    logger.info(f"   Cancelled old SL order {old_sl_id}")
-                except Exception as e:
-                    logger.warning(f"   Could not cancel SL order {old_sl_id}: {e}")
+                await self._cancel_algo_order(old_sl_id)
 
             close_side = self._close_side(pos["side"])
-            sl_order = await self._exchange.create_order(
-                symbol=pair,
-                type="STOP_MARKET",
+            new_sl_id = await self._place_algo_order(
+                pair=pair,
                 side=close_side,
+                order_type="STOP_MARKET",
+                trigger_price=new_sl,
                 amount=pos["size"],
-                params={
-                    "stopPrice": new_sl,
-                    "reduceOnly": True,
-                    "workingType": "MARK_PRICE",
-                },
             )
-            new_sl_id = sl_order.get("id", "")
             self._state.update_sl(pair, new_sl, new_sl_id)
-            logger.info(f"🔄 ADJUSTED SL {pair}: {pos['sl']:.4f} → {new_sl:.4f} (id: {new_sl_id})")
+            logger.info(f"🔄 ADJUSTED SL {pair}: {pos['sl']:.4f} → {new_sl:.4f} (algoId: {new_sl_id})")
             return True
 
         except Exception as e:
@@ -261,28 +292,20 @@ class ExecutionBridge:
         old_tp_id = pos.get("tp_order_id", "")
 
         try:
+            await self._ensure_markets()
             if old_tp_id:
-                try:
-                    await self._exchange.cancel_order(old_tp_id, pair)
-                    logger.info(f"   Cancelled old TP order {old_tp_id}")
-                except Exception as e:
-                    logger.warning(f"   Could not cancel TP order {old_tp_id}: {e}")
+                await self._cancel_algo_order(old_tp_id)
 
             close_side = self._close_side(pos["side"])
-            tp_order = await self._exchange.create_order(
-                symbol=pair,
-                type="TAKE_PROFIT_MARKET",
+            new_tp_id = await self._place_algo_order(
+                pair=pair,
                 side=close_side,
+                order_type="TAKE_PROFIT_MARKET",
+                trigger_price=new_tp,
                 amount=pos["size"],
-                params={
-                    "stopPrice": new_tp,
-                    "reduceOnly": True,
-                    "workingType": "MARK_PRICE",
-                },
             )
-            new_tp_id = tp_order.get("id", "")
             self._state.update_tp(pair, new_tp, new_tp_id)
-            logger.info(f"🔄 ADJUSTED TP {pair}: {pos['tp']:.4f} → {new_tp:.4f} (id: {new_tp_id})")
+            logger.info(f"🔄 ADJUSTED TP {pair}: {pos['tp']:.4f} → {new_tp:.4f} (algoId: {new_tp_id})")
             return True
 
         except Exception as e:
