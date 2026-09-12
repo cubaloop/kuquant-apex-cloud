@@ -104,7 +104,7 @@ class GroqController:
                     ],
                     response_format={"type": "json_object"},
                     temperature=0.25,
-                    max_tokens=1024,
+                    max_tokens=800,
                 )
 
                 raw = response.choices[0].message.content
