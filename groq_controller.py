@@ -28,12 +28,12 @@ class GroqController:
         api_key: str = "",
         model: str = "groq/compound-mini",
         gemini_api_key: str = "",
-        gemini_model: str = "gemini-3.6-flash",
+        gemini_model: str = "gemini-3.5-flash",
     ):
         self._groq_client = Groq(api_key=api_key) if api_key else None
         self._groq_model = model
         self._gemini_key = gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
-        self._gemini_model = gemini_model or os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+        self._gemini_model = gemini_model or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
         if self._gemini_key:
             logger.info(f"🧠 BrainController initialized: PRIMARY = Gemini ({self._gemini_model}) | RESERVE = Groq ({self._groq_model})")
@@ -107,7 +107,7 @@ class GroqController:
 
     def _call_gemini(self, prompt: str) -> dict:
         """Calls Google Gemini API with native JSON schema enforcement."""
-        models = [self._gemini_model, "gemini-3.6-flash", "gemini-flash-latest"]
+        models = ["gemini-3.5-flash", "gemini-3.6-flash"]
         last_e = None
         for m in models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={self._gemini_key}"
@@ -137,6 +137,8 @@ class GroqController:
             except Exception as e:
                 last_e = e
                 logger.warning(f"Gemini call to {m} failed: {e}. Trying next model...")
+                import time
+                time.sleep(1.0)
                 continue
         raise RuntimeError(f"All Gemini models failed: {last_e}")
 
@@ -168,7 +170,7 @@ class GroqController:
                     "decisions": valid_decisions,
                     "next_check_seconds": next_check,
                     "commentary": commentary,
-                    "brain": "Google Gemini 3.6 Flash",
+                    "brain": f"Google Gemini ({self._gemini_model})",
                 }
             except Exception as e:
                 logger.warning(
