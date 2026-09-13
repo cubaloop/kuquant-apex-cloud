@@ -202,6 +202,7 @@ async def dashboard():
     <head>
         <title>KuQuant Apex Cloud — Brain Console</title>
         <meta name='viewport' content='width=device-width, initial-scale=1'>
+        <meta http-equiv='refresh' content='20'>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #0d1117; color: #c9d1d9; padding: 20px; max-width: 1100px; margin: auto; }}
             h1 {{ color: #58a6ff; display: flex; align-items: center; gap: 10px; }}
@@ -210,11 +211,11 @@ async def dashboard():
             th {{ background: #21262d; color: #58a6ff; padding: 10px; text-align: left; font-size: 0.9em; }}
             td {{ padding: 10px; border-bottom: 1px solid #30363d; font-size: 0.9em; }}
             .badge {{ background: #238636; color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.7em; vertical-align: middle; }}
-            .commentary {{ background: #161b22; border-left: 4px solid #58a6ff; padding: 14px; margin: 12px 0; border-radius: 4px; font-size: 0.95em; line-height: 1.5; }}
+            .commentary {{ background: #161b22; border-left: 4px solid #238636; padding: 16px; margin: 12px 0 24px 0; border-radius: 6px; font-size: 1.0em; line-height: 1.6; color: #f0f6fc; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }}
             .logbox {{ background: #010409; border: 1px solid #30363d; padding: 12px; border-radius: 6px; max-height: 220px; overflow-y: auto; font-family: monospace; }}
             ul {{ background: #161b22; padding: 12px 24px; border-radius: 6px; list-style: square; }}
             li {{ margin-bottom: 6px; }}
-            .console-box {{ background: #161b22; border: 1px solid #388bfd; padding: 16px; border-radius: 8px; margin: 20px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }}
+            .console-box {{ background: #161b22; border: 1px solid #388bfd; padding: 16px; border-radius: 8px; margin: 20px 0 10px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }}
             textarea {{ width: 100%; box-sizing: border-box; background: #0d1117; color: #f0f6fc; border: 1px solid #30363d; border-radius: 6px; padding: 10px; font-size: 0.95em; font-family: inherit; resize: vertical; }}
             textarea:focus {{ border-color: #58a6ff; outline: none; }}
             button {{ background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; font-size: 0.95em; }}
@@ -222,14 +223,14 @@ async def dashboard():
         </style>
     </head>
     <body>
-        <h1>🤖 KuQuant Apex Cloud <span class='badge'>{s.get('active_brain', 'Google Gemini 3.6 Flash')}</span></h1>
-        <p style='color:#8b949e; font-size:0.9em;'>Última actualización: <b>{s.get('last_decision_time', 'N/A')}</b> | Trades sesión: <b>{total}</b> | Win Rate: <b>{wr}</b></p>
+        <h1>🤖 KuQuant Apex Cloud <span class='badge'>{s.get('active_brain', 'Groq Dev Tier')}</span></h1>
+        <p style='color:#8b949e; font-size:0.9em;'>Última actualización: <b>{s.get('last_decision_time', 'N/A')}</b> | Trades sesión: <b>{total}</b> | Win Rate: <b>{wr}</b> | <i>Auto-refresco cada 20s</i></p>
 
         <!-- CONSOLA DIRECTA DEL OPERADOR -->
         <div class='console-box'>
-            <h3 style='margin-top:0; color:#58a6ff;'>🗣️ Consola de Instrucciones Directas (Gemini 3.6 / Groq)</h3>
+            <h3 style='margin-top:0; color:#58a6ff;'>🗣️ Consola de Instrucciones Directas (Groq Dev Tier)</h3>
             <p style='font-size:0.85em; color:#8b949e; margin-bottom:10px;'>
-                Escribe aquí tus órdenes en lenguaje natural. El Cerebro Cuantitativo leerá esta directriz y ajustará su estrategia inmediatamente.
+                Escribe aquí tus órdenes en lenguaje natural. El Cerebro Cuantitativo responderá en el recuadro verde inferior en tiempo real.
             </p>
             <form action="/directive" method="post">
                 <textarea name="directive" rows="2" placeholder="Ej: Mantén cautela con las comisiones, prioriza trades con R >= 2 y volumen expansivo.">{current_directive}</textarea>
@@ -239,6 +240,9 @@ async def dashboard():
                 </div>
             </form>
         </div>
+
+        <h3 style='color:#58a6ff; margin-bottom: 6px;'>💬 Respuesta y Razonamiento del Cerebro [{s.get('active_brain', 'Groq')}]</h3>
+        <div class='commentary'>{s.get('last_commentary') or 'Esperando primer ciclo...'}</div>
 
         <h2>Posiciones Activas ({len(s.get('positions', []))})</h2>
         <table>
@@ -251,9 +255,6 @@ async def dashboard():
             <tr><th>Par</th><th>Precio</th><th>EMA Momentum</th><th>RSI (14)</th><th>ATR (Ruido)</th><th>Presión Libro</th><th>Funding (8h)</th></tr>
             {telem_rows if telem_rows else "<tr><td colspan='7' style='color:#8b949e; text-align:center;'>Recopilando telemetría...</td></tr>"}
         </table>
-
-        <h2>Razonamiento Cuantitativo [{s.get('active_brain', 'Google Gemini 3.6 Flash')}]</h2>
-        <div class='commentary'>{s.get('last_commentary') or 'Esperando primer ciclo...'}</div>
 
         <h2>Decisiones del Ciclo</h2>
         <ul>{decisions_html or '<li>Sin decisiones aún</li>'}</ul>

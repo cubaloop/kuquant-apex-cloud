@@ -35,10 +35,10 @@ class GroqController:
         self._gemini_key = gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
         self._gemini_model = gemini_model or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
-        if self._gemini_key:
-            logger.info(f"🧠 BrainController initialized: PRIMARY = Gemini ({self._gemini_model}) | RESERVE = Groq ({self._groq_model})")
+        if self._groq_client:
+            logger.info(f"🧠 BrainController initialized: PRIMARY = Groq ({self._groq_model}) | RESERVE = Gemini ({self._gemini_model})")
         else:
-            logger.info(f"🧠 BrainController initialized: Groq ({self._groq_model})")
+            logger.info(f"🧠 BrainController initialized: Gemini ({self._gemini_model})")
 
     def _build_prompt(self, snapshot: dict, state: dict) -> str:
         """Merge market snapshot + account state into a single JSON context for Groq."""
@@ -106,13 +106,11 @@ class GroqController:
         return True
 
     def _call_gemini(self, prompt: str) -> dict:
-        """Calls Google Gemini API with native JSON schema enforcement across redundant fleet."""
+        """Calls Google Gemini API as reserve brain."""
         models = [
             "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
             "gemini-3-flash-preview",
-            "gemini-3.7-flash",
-            "gemini-3.8-flash",
-            "gemini-3.6-flash",
         ]
         last_e = None
         for m in models:
@@ -144,24 +142,77 @@ class GroqController:
                     return res_dict
             except Exception as e:
                 last_e = e
-                logger.warning(f"Gemini call to {m} failed: {e}. Trying next model in fleet...")
+                logger.warning(f"Gemini reserve call to {m} failed: {e}")
                 import time
-                time.sleep(0.5)
+                time.sleep(1.0)
                 continue
-        raise RuntimeError(f"All Gemini models failed: {last_e}")
+        raise RuntimeError(f"All Gemini reserve models failed: {last_e}")
 
     def get_decisions(self, snapshot: dict, state: dict) -> dict:
         """
         Dual-Brain Controller:
-        1. PRIMARY BRAIN: Google Gemini 3.6 Flash (1,500 free RPD, 1M TPM, institutional reasoning).
-        2. RESERVE BRAIN: Groq (ultra-low latency fallback).
+        1. PRIMARY BRAIN: Groq Dev Tier (ultra-low latency <1s, high-throughput quantitative engine).
+        2. RESERVE BRAIN: Google Gemini (high-reasoning fallback).
         """
         prompt = self._build_prompt(snapshot, state)
 
-        # ── 1. PRIMARY BRAIN: GOOGLE GEMINI ────────────────────────────────
+        # ── 1. PRIMARY BRAIN: GROQ (DEV TIER) ──────────────────────────────
+        if self._groq_client:
+            models_to_try = [self._groq_model, "groq/compound-mini", "groq/compound", "qwen/qwen3.8-27b"]
+            # Deduplicate preserving order
+            seen = set()
+            unique_models = []
+            for m in models_to_try:
+                if m and m not in seen:
+                    seen.add(m)
+                    unique_models.append(m)
+
+            for current_model in unique_models:
+                try:
+                    logger.info(f"🧠 Asking PRIMARY BRAIN (Groq: {current_model})...")
+                    response = self._groq_client.chat.completions.create(
+                        model=current_model,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": f"MARKET AND OPERATOR CONTEXT:\n{prompt}"},
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.2,
+                        max_tokens=700,
+                    )
+
+                    raw = response.choices[0].message.content
+                    logger.debug(f"Groq raw response: {raw[:300]}")
+
+                    parsed = self._extract_json(raw)
+
+                    # Validate and filter decisions
+                    decisions = parsed.get("decisions", [])
+                    valid_decisions = [d for d in decisions if self._validate_decision(d)]
+
+                    next_check = int(parsed.get("next_check_seconds", DEFAULT_NEXT_CHECK))
+                    next_check = max(30, min(next_check, 300))
+                    commentary = parsed.get("commentary", "")
+
+                    logger.info(
+                        f"⚡ Groq ({current_model}) [Principal] → {len(valid_decisions)} decisions | next_check: {next_check}s | {commentary[:80]}"
+                    )
+
+                    return {
+                        "decisions": valid_decisions,
+                        "next_check_seconds": next_check,
+                        "commentary": commentary,
+                        "brain": f"Groq ({current_model}) [Principal]",
+                    }
+
+                except Exception as e:
+                    logger.warning(f"⚠️ Primary model {current_model} failed: {e}. Trying next Groq model...")
+                    continue
+
+        # ── 2. RESERVE BRAIN: GOOGLE GEMINI ────────────────────────────────
         if self._gemini_key:
             try:
-                logger.info(f"🧠 Asking PRIMARY BRAIN (Google Gemini: {self._gemini_model})...")
+                logger.info(f"🛡️ Consulting RESERVE BRAIN (Google Gemini: {self._gemini_model})...")
                 parsed = self._call_gemini(prompt)
 
                 decisions = parsed.get("decisions", [])
@@ -171,87 +222,22 @@ class GroqController:
                 commentary = parsed.get("commentary", "")
 
                 logger.info(
-                    f"🌟 Gemini ({self._gemini_model}) → {len(valid_decisions)} decisions | next_check: {next_check}s | {commentary[:100]}"
+                    f"🌟 Gemini ({self._gemini_model}) [Reserva] → {len(valid_decisions)} decisions | next_check: {next_check}s | {commentary[:80]}"
                 )
 
                 return {
                     "decisions": valid_decisions,
                     "next_check_seconds": next_check,
                     "commentary": commentary,
-                    "brain": f"Google Gemini ({self._gemini_model})",
+                    "brain": f"Google Gemini ({parsed.get('_model', self._gemini_model)}) [Reserva]",
                 }
             except Exception as e:
-                logger.warning(
-                    f"⚠️ Primary Brain (Gemini) error: {e}. Activating RESERVE BRAIN (Groq)..."
-                )
+                logger.error(f"Reserve Brain (Gemini) also failed: {e}")
 
-        # ── 2. RESERVE BRAIN: GROQ ──────────────────────────────────────────
-        if self._groq_client:
-            logger.info("🛡️ Consulting RESERVE BRAIN (Groq)...")
-            models_to_try = ["groq/compound-mini", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
-            if self._groq_model not in models_to_try:
-                models_to_try.insert(0, self._groq_model)
-
-            last_error = ""
-            for current_model in models_to_try:
-                try:
-                    logger.info(f"Calling Groq model: {current_model}...")
-                    response = self._groq_client.chat.completions.create(
-                        model=current_model,
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": prompt},
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=0.25,
-                        max_tokens=800,
-                    )
-
-                    raw = response.choices[0].message.content
-                    logger.debug(f"Groq raw response: {raw[:500]}")
-
-                    parsed = self._extract_json(raw)
-
-                    # Validate and filter decisions
-                    decisions = parsed.get("decisions", [])
-                    valid_decisions = [d for d in decisions if self._validate_decision(d)]
-
-                    if len(valid_decisions) < len(decisions):
-                        logger.warning(
-                            f"Dropped {len(decisions) - len(valid_decisions)} invalid decisions"
-                        )
-
-                    next_check = int(parsed.get("next_check_seconds", DEFAULT_NEXT_CHECK))
-                    next_check = max(30, min(next_check, 300))
-
-                    commentary = parsed.get("commentary", "")
-                    logger.info(
-                        f"Groq ({current_model}) → {len(valid_decisions)} decisions | next_check: {next_check}s | {commentary[:100]}"
-                    )
-
-                    return {
-                        "decisions": valid_decisions,
-                        "next_check_seconds": next_check,
-                        "commentary": commentary,
-                        "brain": f"Groq ({current_model}) [Reserva]",
-                    }
-
-                except Exception as e:
-                    last_error = str(e)
-                    if "429" in last_error:
-                        logger.warning(
-                            f"⚠️ Model {current_model} rate limited (429). Trying fallback model..."
-                        )
-                        continue
-                    else:
-                        logger.error(f"Error on model {current_model}: {e}")
-                        continue
-
-            logger.error(f"All Groq models failed. Last error: {last_error}")
-
+        # ── 3. SAFETY FALLBACK ──────────────────────────────────────────────
         return {
             "decisions": [{"action": "WAIT", "reason": "Sistemas de IA temporalmente no disponibles"}],
-            "next_check_seconds": 180,
-            "commentary": "Sistemas en espera. Protegiendo fondos en caja.",
+            "next_check_seconds": 60,
+            "commentary": "Sistemas en espera pasiva. Protegiendo fondos en caja.",
             "brain": "Seguridad Pasiva",
         }

@@ -28,11 +28,11 @@ class StateManager:
         self.winning_trades: int = 0
         # Direct operator instructions to Brain
         self.operator_directive: str = (
-            "Gemini, asume el control como Cerebro Cuantitativo Principal de Binance Futures, manteniendo a Groq de reserva. "
+            "Groq, asume el control como Cerebro Cuantitativo Principal de Binance Futures (Dev Tier activo). "
             "Saluda al operador, reporta tu estado y explica tu lectura del mercado actual."
         )
         self.latest_telemetry: dict = {}
-        self.active_brain: str = "Google Gemini 3.6 Flash"
+        self.active_brain: str = "Groq (compound-mini) [Principal]"
 
     def set_operator_directive(self, directive: str):
         self.operator_directive = directive.strip()
