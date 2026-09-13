@@ -36,7 +36,7 @@ async def run_engine():
     binance_secret = os.environ["BINANCE_API_SECRET"]
     testnet = os.environ.get("BINANCE_TESTNET", "true").lower() == "true"
     groq_key = os.environ["GROQ_API_KEY"]
-    groq_model = os.environ.get("GROQ_MODEL", "compound-beta")
+    groq_model = os.environ.get("GROQ_MODEL", "groq/compound-mini")
 
     reader = MarketReader(binance_key, binance_secret, testnet)
     groq = GroqController(groq_key, groq_model)

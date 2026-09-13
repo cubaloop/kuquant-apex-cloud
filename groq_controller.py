@@ -99,10 +99,10 @@ class GroqController:
         """
         prompt = self._build_prompt(snapshot, state)
 
-        models_to_try = [self._model]
-        for fb in ["qwen/qwen3.6-27b", "openai/gpt-oss-120b", "groq/compound"]:
-            if fb not in models_to_try:
-                models_to_try.append(fb)
+        # Priority order: groq/compound-mini (stable JSON, no think tags) followed by others
+        models_to_try = ["groq/compound-mini", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
+        if self._model not in models_to_try:
+            models_to_try.insert(0, self._model)
 
         last_error = ""
         for current_model in models_to_try:
