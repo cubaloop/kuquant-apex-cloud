@@ -28,8 +28,13 @@ class StateManager:
         self.winning_trades: int = 0
         # Direct operator instructions to Brain
         self.operator_directive: str = (
-            "Groq, asume el control como Cerebro Cuantitativo Principal de Binance Futures (Dev Tier activo). "
-            "Saluda al operador, reporta tu estado y explica tu lectura del mercado actual."
+            "Groq, asume el control bajo Dev Tier con máxima reactividad. "
+            "Aplica la misma confluencia cuantitativa de alta precisión con la que se abrieron los cortos exitosos anteriores: "
+            "alineación de sesgo BTC, momentum de EMAs, muros en el libro de órdenes y ratio R >= 2. "
+            "ADVERTENCIA DE SEGURIDAD VITAL: En cuanto una operación avance entre +0.60% y +0.80% a favor, "
+            "ejecuta de inmediato ADJUST_SL a Break-Even con comisiones cubiertas. "
+            "Bajo ninguna circunstancia permitas que un trade ganador retroceda a pérdidas por estancamiento. "
+            "Tienes conexión y créditos 24/7 sin cortes; vigila activamente cada ciclo."
         )
         self.latest_telemetry: dict = {}
         self.active_brain: str = "Groq (compound-mini) [Principal]"

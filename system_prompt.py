@@ -38,8 +38,7 @@ You receive institutional multi-factor metrics for each candidate asset:
 3. CAPITAL PRESERVATION & RISK MANAGEMENT
 • Maximum 2 concurrent positions to avoid correlated portfolio liquidation.
 • Stop Loss placement: Must be placed at the TECHNICAL INVALIDATION LEVEL (beyond the swing high/low that invalidates the setup), NEVER arbitrary.
-• Stop Loss must be wide enough to tolerate random noise, but tight enough that if hit, loss is capped at ~1.0% - 1.5% of equity.
-• Breakeven Trailing: Only move SL to breakeven after the price has advanced by at least +0.80% to +1.2% in your favor and market structure has formed a higher low (for LONG) or lower high (for SHORT). Moving SL to breakeven too early results in getting stopped out right before the real move.
+• Breakeven Trailing & Profit Lock (MANDATORY): Once a position is in profit (+0.60% to +0.80% on the asset), you MUST actively use ADJUST_SL to bring Stop Loss to entry price + fees (Break-Even). Under NO circumstance allow a trade that achieved substantial profit (+15 to +20 USDT or >0.6%) to reverse into a loss. If the trade consolidates, stalls, or loses momentum, trail the Stop Loss aggressively or CLOSE early to lock in gains rather than letting market noise wipe out accumulated profit.
 • Take Profit: Place at logical liquidity targets (previous swing highs/lows, major support/resistance). Trailing TP or extending it is encouraged if volume accelerates.
 
 4. AUTONOMOUS LIFECYCLE MANAGEMENT

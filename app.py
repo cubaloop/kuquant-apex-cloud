@@ -202,7 +202,6 @@ async def dashboard():
     <head>
         <title>KuQuant Apex Cloud — Brain Console</title>
         <meta name='viewport' content='width=device-width, initial-scale=1'>
-        <meta http-equiv='refresh' content='20'>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #0d1117; color: #c9d1d9; padding: 20px; max-width: 1100px; margin: auto; }}
             h1 {{ color: #58a6ff; display: flex; align-items: center; gap: 10px; }}
@@ -224,7 +223,7 @@ async def dashboard():
     </head>
     <body>
         <h1>🤖 KuQuant Apex Cloud <span class='badge'>{s.get('active_brain', 'Groq Dev Tier')}</span></h1>
-        <p style='color:#8b949e; font-size:0.9em;'>Última actualización: <b>{s.get('last_decision_time', 'N/A')}</b> | Trades sesión: <b>{total}</b> | Win Rate: <b>{wr}</b> | <i>Auto-refresco cada 20s</i></p>
+        <p style='color:#8b949e; font-size:0.9em;'>Última actualización: <b>{s.get('last_decision_time', 'N/A')}</b> | Trades sesión: <b>{total}</b> | Win Rate: <b>{wr}</b> | <span id='refreshStatus' style='color:#388bfd;'>Auto-sincronización activa</span></p>
 
         <!-- CONSOLA DIRECTA DEL OPERADOR -->
         <div class='console-box'>
@@ -232,11 +231,11 @@ async def dashboard():
             <p style='font-size:0.85em; color:#8b949e; margin-bottom:10px;'>
                 Escribe aquí tus órdenes en lenguaje natural. El Cerebro Cuantitativo responderá en el recuadro verde inferior en tiempo real.
             </p>
-            <form action="/directive" method="post">
-                <textarea name="directive" rows="2" placeholder="Ej: Mantén cautela con las comisiones, prioriza trades con R >= 2 y volumen expansivo.">{current_directive}</textarea>
+            <form id="directiveForm" onsubmit="handleDirectiveSubmit(event)">
+                <textarea id="directiveInput" name="directive" rows="2" placeholder="Ej: Mantén cautela con las comisiones, prioriza trades con R >= 2 y volumen expansivo.">{current_directive}</textarea>
                 <div style='margin-top:10px; display:flex; justify-content:space-between; align-items:center;'>
-                    <button type="submit">🚀 Enviar Instrucción Directa</button>
-                    <span style='font-size:0.8em; color:#8b949e;'>Se aplica en el ciclo inmediato</span>
+                    <button id="submitBtn" type="submit">🚀 Enviar Instrucción Directa</button>
+                    <span id="directiveStatus" style='font-size:0.85em; color:#58a6ff;'>Se aplica en el ciclo inmediato</span>
                 </div>
             </form>
         </div>
@@ -268,6 +267,48 @@ async def dashboard():
         <h2>Logs en Vivo del Motor (Últimas 20 líneas)</h2>
         <div class='logbox'>{log_html or '<div style="color:#8b949e">Sin logs</div>'}</div>
         <p style='font-size:0.8em; color:#8b949e; margin-top:8px;'>Logs completos: <a href='/logs' style='color:#58a6ff'>/logs</a> | Estado JSON: <a href='/status' style='color:#58a6ff'>/status</a></p>
+
+        <script>
+            // Non-intrusive auto-refresh: NEVER reloads while user is focused or typing!
+            setInterval(() => {{
+                const ta = document.getElementById('directiveInput');
+                if (ta && (document.activeElement === ta || ta.value.trim() !== ta.defaultValue.trim())) {{
+                    const st = document.getElementById('refreshStatus');
+                    if (st) st.innerText = 'Pausado mientras escribes...';
+                    return;
+                }}
+                window.location.reload();
+            }}, 15000);
+
+            async function handleDirectiveSubmit(e) {{
+                e.preventDefault();
+                const btn = document.getElementById('submitBtn');
+                const status = document.getElementById('directiveStatus');
+                const ta = document.getElementById('directiveInput');
+                const val = ta.value.trim();
+                if (!val) return;
+
+                btn.disabled = true;
+                btn.style.opacity = '0.7';
+                btn.innerText = '⏳ Groq procesando...';
+                status.innerText = '⚡ Transmitiendo a Groq Dev Tier...';
+
+                try {{
+                    const formData = new FormData();
+                    formData.append('directive', val);
+                    await fetch('/directive', {{ method: 'POST', body: formData }});
+                    status.innerText = '🧠 Groq analizando y respondiendo...';
+                    setTimeout(() => {{
+                        window.location.reload();
+                    }}, 2200);
+                }} catch (err) {{
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.innerText = '🚀 Enviar Instrucción Directa';
+                    status.innerText = 'Error al enviar instrucción';
+                }}
+            }}
+        </script>
     </body>
     </html>
     """
