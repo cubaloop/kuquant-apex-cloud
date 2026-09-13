@@ -130,7 +130,7 @@ class GroqController:
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=15) as r:
+                with urllib.request.urlopen(req, timeout=30) as r:
                     res = json.loads(r.read().decode("utf-8"))
                     text = res["candidates"][0]["content"]["parts"][0]["text"]
                     return json.loads(text)
