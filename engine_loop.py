@@ -97,6 +97,8 @@ async def run_engine():
 
                 decisions = result["decisions"]
                 next_check = result["next_check_seconds"]
+                if all(d.get("action") == "WAIT" for d in decisions) and not state.positions:
+                    next_check = max(180, next_check)
                 commentary = result.get("commentary", "")
 
                 # Update state with Groq's commentary (for dashboard)

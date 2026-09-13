@@ -51,7 +51,7 @@ class GroqController:
                     "funding_rate_pct": data.get("funding_rate_pct", 0.0100),
                     "vol_ratio": data.get("vol_ratio"),
                     "spread_pct": data.get("spread_pct"),
-                    "close_20": data.get("close_20", []),
+                    "last_closes": [round(c, 4) for c in data.get("close_20", [])[-6:]],
                 }
 
         return json.dumps(context, indent=None, separators=(",", ":"))
@@ -94,15 +94,22 @@ class GroqController:
     def get_decisions(self, snapshot: dict, state: dict) -> dict:
         """
         Calls Groq with the full context.
+        Attempts primary model, and seamlessly falls back to alternative models on 429 quota limits.
         Returns: {"decisions": [...], "next_check_seconds": int, "commentary": str}
         """
         prompt = self._build_prompt(snapshot, state)
 
-        for attempt in range(1, MAX_RETRIES + 1):
+        models_to_try = [self._model]
+        for fb in ["qwen/qwen3.6-27b", "openai/gpt-oss-120b", "groq/compound"]:
+            if fb not in models_to_try:
+                models_to_try.append(fb)
+
+        last_error = ""
+        for current_model in models_to_try:
             try:
-                logger.info(f"Calling Groq (attempt {attempt}/{MAX_RETRIES})...")
+                logger.info(f"Calling Groq model: {current_model}...")
                 response = self._client.chat.completions.create(
-                    model=self._model,
+                    model=current_model,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
@@ -127,11 +134,11 @@ class GroqController:
                     )
 
                 next_check = int(parsed.get("next_check_seconds", DEFAULT_NEXT_CHECK))
-                next_check = max(20, min(next_check, 300))  # Clamp to safe range
+                next_check = max(30, min(next_check, 300))  # Clamp to safe range
 
                 commentary = parsed.get("commentary", "")
                 logger.info(
-                    f"Groq → {len(valid_decisions)} decisions | next_check: {next_check}s | {commentary[:100]}"
+                    f"Groq ({current_model}) → {len(valid_decisions)} decisions | next_check: {next_check}s | {commentary[:100]}"
                 )
 
                 return {
@@ -141,11 +148,19 @@ class GroqController:
                 }
 
             except Exception as e:
-                logger.error(f"Groq call attempt {attempt} failed: {e}")
-                if attempt == MAX_RETRIES:
-                    logger.error("All Groq retries exhausted. Returning WAIT.")
-                    return {
-                        "decisions": [{"action": "WAIT", "reason": f"Groq error: {str(e)[:100]}"}],
-                        "next_check_seconds": DEFAULT_NEXT_CHECK,
-                        "commentary": f"Groq unavailable: {str(e)[:100]}",
-                    }
+                last_error = str(e)
+                if "429" in last_error:
+                    logger.warning(
+                        f"⚠️ Model {current_model} rate limited (429). Trying fallback model..."
+                    )
+                    continue
+                else:
+                    logger.error(f"Error on model {current_model}: {e}")
+                    continue
+
+        logger.error(f"All Groq models failed. Last error: {last_error}")
+        return {
+            "decisions": [{"action": "WAIT", "reason": f"Groq fallback: {last_error[:100]}"}],
+            "next_check_seconds": 180,
+            "commentary": f"Groq en espera de cuota. Último reporte: {last_error[:100]}",
+        }
