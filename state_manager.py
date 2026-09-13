@@ -202,6 +202,12 @@ class StateManager:
             except Exception:
                 duration_min = 0
 
+            size = p.get("size", 0)
+            if p["side"] == "LONG":
+                pnl_usdt = (curr_price - entry) * size
+            else:
+                pnl_usdt = (entry - curr_price) * size
+
             open_pos.append(
                 {
                     "pair": pair,
@@ -209,6 +215,7 @@ class StateManager:
                     "entry_price": p["entry_price"],
                     "current_price": curr_price,
                     "unrealized_pnl_pct": round(pnl_pct, 2),
+                    "unrealized_pnl_usdt": round(pnl_usdt, 2),
                     "time_open_minutes": duration_min,
                     "current_sl": p["sl"],
                     "current_tp": p["tp"],
