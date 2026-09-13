@@ -222,19 +222,19 @@ async def dashboard():
         </style>
     </head>
     <body>
-        <h1>🤖 KuQuant Apex Cloud <span class='badge'>AUTONOMOUS GROQ</span></h1>
+        <h1>🤖 KuQuant Apex Cloud <span class='badge'>{s.get('active_brain', 'Google Gemini 3.6 Flash')}</span></h1>
         <p style='color:#8b949e; font-size:0.9em;'>Última actualización: <b>{s.get('last_decision_time', 'N/A')}</b> | Trades sesión: <b>{total}</b> | Win Rate: <b>{wr}</b></p>
 
         <!-- CONSOLA DIRECTA DEL OPERADOR -->
         <div class='console-box'>
-            <h3 style='margin-top:0; color:#58a6ff;'>🗣️ Consola de Instrucciones Directas para Groq</h3>
+            <h3 style='margin-top:0; color:#58a6ff;'>🗣️ Consola de Instrucciones Directas (Gemini 3.6 / Groq)</h3>
             <p style='font-size:0.85em; color:#8b949e; margin-bottom:10px;'>
-                Escribe aquí tus órdenes en lenguaje natural. En el siguiente ciclo, Groq leerá esta directriz y ajustará su estrategia inmediatamente.
+                Escribe aquí tus órdenes en lenguaje natural. El Cerebro Cuantitativo leerá esta directriz y ajustará su estrategia inmediatamente.
             </p>
             <form action="/directive" method="post">
-                <textarea name="directive" rows="2" placeholder="Ej: No cierres posiciones antes de 10 minutos para absorber comisiones. Prioriza R >= 2 y trailing stop.">{current_directive}</textarea>
+                <textarea name="directive" rows="2" placeholder="Ej: Mantén cautela con las comisiones, prioriza trades con R >= 2 y volumen expansivo.">{current_directive}</textarea>
                 <div style='margin-top:10px; display:flex; justify-content:space-between; align-items:center;'>
-                    <button type="submit">🚀 Enviar Instrucción Directa a Groq</button>
+                    <button type="submit">🚀 Enviar Instrucción Directa</button>
                     <span style='font-size:0.8em; color:#8b949e;'>Se aplica en el ciclo inmediato</span>
                 </div>
             </form>
@@ -252,7 +252,7 @@ async def dashboard():
             {telem_rows if telem_rows else "<tr><td colspan='7' style='color:#8b949e; text-align:center;'>Recopilando telemetría...</td></tr>"}
         </table>
 
-        <h2>Razonamiento Cuantitativo de Groq (Último Ciclo)</h2>
+        <h2>Razonamiento Cuantitativo [{s.get('active_brain', 'Google Gemini 3.6 Flash')}]</h2>
         <div class='commentary'>{s.get('last_commentary') or 'Esperando primer ciclo...'}</div>
 
         <h2>Decisiones del Ciclo</h2>

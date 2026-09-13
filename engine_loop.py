@@ -35,16 +35,23 @@ async def run_engine():
     binance_key = os.environ["BINANCE_API_KEY"]
     binance_secret = os.environ["BINANCE_API_SECRET"]
     testnet = os.environ.get("BINANCE_TESTNET", "true").lower() == "true"
-    groq_key = os.environ["GROQ_API_KEY"]
+    groq_key = os.environ.get("GROQ_API_KEY", "")
     groq_model = os.environ.get("GROQ_MODEL", "groq/compound-mini")
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
     reader = MarketReader(binance_key, binance_secret, testnet)
-    groq = GroqController(groq_key, groq_model)
+    groq = GroqController(
+        api_key=groq_key,
+        model=groq_model,
+        gemini_api_key=gemini_key,
+        gemini_model=gemini_model,
+    )
     bridge = ExecutionBridge(binance_key, binance_secret, state, testnet)
 
     logger.info("=" * 60)
-    logger.info("🚀 KuQuant Apex Cloud — ENGINE STARTED")
-    logger.info(f"   Testnet: {testnet} | Model: {groq_model}")
+    logger.info("🚀 KuQuant Apex Cloud — DUAL-BRAIN ENGINE STARTED")
+    logger.info(f"   Primary: Gemini ({gemini_model}) | Reserve: Groq ({groq_model})")
     logger.info("=" * 60)
 
     next_check = 30  # Initial cycle
@@ -100,13 +107,15 @@ async def run_engine():
                 if all(d.get("action") == "WAIT" for d in decisions) and not state.positions:
                     next_check = max(180, next_check)
                 commentary = result.get("commentary", "")
+                brain_name = result.get("brain", "Google Gemini 3.6 Flash")
 
-                # Update state with Groq's commentary (for dashboard)
+                # Update state with commentary and active brain (for dashboard)
                 state.last_commentary = commentary
                 state.last_decision_time = cycle_start.isoformat()
                 state.last_groq_decisions = decisions
+                state.active_brain = brain_name
 
-                logger.info(f"💬 Groq: {commentary}")
+                logger.info(f"💬 [{brain_name}]: {commentary}")
                 logger.info(f"📋 Decisions ({len(decisions)}): {[d.get('action') for d in decisions]}")
 
                 # 5. Execute decisions

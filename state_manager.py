@@ -26,14 +26,13 @@ class StateManager:
         self.last_groq_decisions: list[dict] = []
         self.total_trades: int = 0
         self.winning_trades: int = 0
-        # Direct operator instructions to Groq
+        # Direct operator instructions to Brain
         self.operator_directive: str = (
-            "El operador ha integrado telemetría cuantitativa avanzada: ATR de volatilidad, RSI-14, "
-            "presión de libro de órdenes (Bid/Ask Imbalance), EMAs 9/21, tasa de financiación y sesgo de BTC. "
-            "Explica al operador en tu comentario inicial: ¿Cómo integras estos nuevos datos en tu toma de decisiones "
-            "y crees que te benefician o te perjudican frente a las comisiones?"
+            "Gemini, asume el control como Cerebro Cuantitativo Principal de Binance Futures, manteniendo a Groq de reserva. "
+            "Saluda al operador, reporta tu estado y explica tu lectura del mercado actual."
         )
         self.latest_telemetry: dict = {}
+        self.active_brain: str = "Google Gemini 3.6 Flash"
 
     def set_operator_directive(self, directive: str):
         self.operator_directive = directive.strip()
@@ -239,4 +238,5 @@ class StateManager:
             "last_groq_decisions": self.last_groq_decisions,
             "operator_directive": self.operator_directive,
             "latest_telemetry": self.latest_telemetry,
+            "active_brain": self.active_brain,
         }
