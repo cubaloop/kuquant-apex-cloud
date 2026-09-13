@@ -106,8 +106,14 @@ class GroqController:
         return True
 
     def _call_gemini(self, prompt: str) -> dict:
-        """Calls Google Gemini API with native JSON schema enforcement."""
-        models = ["gemini-3.5-flash", "gemini-3.6-flash"]
+        """Calls Google Gemini API with native JSON schema enforcement across redundant fleet."""
+        models = [
+            "gemini-3.5-flash",
+            "gemini-3-flash-preview",
+            "gemini-3.7-flash",
+            "gemini-3.8-flash",
+            "gemini-3.6-flash",
+        ]
         last_e = None
         for m in models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={self._gemini_key}"
@@ -130,15 +136,17 @@ class GroqController:
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=30) as r:
+                with urllib.request.urlopen(req, timeout=20) as r:
                     res = json.loads(r.read().decode("utf-8"))
                     text = res["candidates"][0]["content"]["parts"][0]["text"]
-                    return json.loads(text)
+                    res_dict = json.loads(text)
+                    res_dict["_model"] = m
+                    return res_dict
             except Exception as e:
                 last_e = e
-                logger.warning(f"Gemini call to {m} failed: {e}. Trying next model...")
+                logger.warning(f"Gemini call to {m} failed: {e}. Trying next model in fleet...")
                 import time
-                time.sleep(1.0)
+                time.sleep(0.5)
                 continue
         raise RuntimeError(f"All Gemini models failed: {last_e}")
 

@@ -104,16 +104,32 @@ async def run_engine():
 
                 decisions = result["decisions"]
                 next_check = result["next_check_seconds"]
+                commentary = result.get("commentary", "")
+                brain_name = result.get("brain", "Google Gemini")
+
+                # If both brains were temporarily offline in this cycle, keep the existing commentary
+                # and don't wipe out the thesis or panic-wait if positions exist!
+                if brain_name == "Seguridad Pasiva":
+                    logger.warning("Passive Safety cycle: keeping previous commentary and protecting positions.")
+                    if state.positions:
+                        decisions = [
+                            {
+                                "action": "HOLD",
+                                "pair": p,
+                                "reason": "Posición activa protegida en Binance por Stop Loss y Take Profit nativos. Reintentando análisis en próximo ciclo.",
+                            }
+                            for p in state.positions
+                        ]
+                    next_check = 45
+                else:
+                    state.last_commentary = commentary
+                    state.active_brain = brain_name
+                    state.last_groq_decisions = decisions
+
                 if all(d.get("action") == "WAIT" for d in decisions) and not state.positions:
                     next_check = max(180, next_check)
-                commentary = result.get("commentary", "")
-                brain_name = result.get("brain", "Google Gemini 3.6 Flash")
 
-                # Update state with commentary and active brain (for dashboard)
-                state.last_commentary = commentary
                 state.last_decision_time = cycle_start.isoformat()
-                state.last_groq_decisions = decisions
-                state.active_brain = brain_name
 
                 logger.info(f"💬 [{brain_name}]: {commentary}")
                 logger.info(f"📋 Decisions ({len(decisions)}): {[d.get('action') for d in decisions]}")
