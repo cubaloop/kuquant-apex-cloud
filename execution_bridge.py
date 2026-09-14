@@ -239,7 +239,14 @@ class ExecutionBridge:
                 amount=pos["size"],
                 params={"reduceOnly": True},
             )
-            exit_price = close_order.get("average") or 0
+            exit_price = close_order.get("average") or close_order.get("price") or 0
+            if not exit_price or exit_price <= 0:
+                try:
+                    t_info = await self._exchange.fetch_ticker(pair)
+                    exit_price = t_info.get("last") or pos.get("entry_price", 0)
+                except Exception:
+                    exit_price = pos.get("entry_price", 0)
+
             logger.info(
                 f"🔴 CLOSED {pos['side']} {pair} | exit: {exit_price:.4f} | reason: {reason}"
             )

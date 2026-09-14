@@ -79,17 +79,25 @@ class StateManager:
             if new_tp_order_id:
                 self.positions[pair]["tp_order_id"] = str(new_tp_order_id)
 
-    def close_position(self, pair: str, exit_price: float, reason: str = ""):
+    def close_position(self, pair: str, exit_price: float, reason: str = "", pnl_usdt: float = None):
         if pair not in self.positions:
             return
         pos = self.positions.pop(pair)
-        entry = pos["entry_price"]
-        side = pos["side"]
+        entry = pos.get("entry_price", 0)
+        side = pos.get("side", "LONG")
+        size = pos.get("size", 0)
+
+        if exit_price <= 0:
+            exit_price = entry
 
         if side == "LONG":
             pnl_pct = ((exit_price - entry) / entry) * 100 if entry > 0 else 0
+            calc_pnl_usdt = (exit_price - entry) * size
         else:
             pnl_pct = ((entry - exit_price) / entry) * 100 if entry > 0 else 0
+            calc_pnl_usdt = (entry - exit_price) * size
+
+        final_pnl_usdt = pnl_usdt if pnl_usdt is not None else calc_pnl_usdt
 
         try:
             opened_at = datetime.fromisoformat(pos["opened_at"])
@@ -103,7 +111,8 @@ class StateManager:
             "entry_price": entry,
             "exit_price": exit_price,
             "pnl_pct": round(pnl_pct, 3),
-            "result": "WIN" if pnl_pct > 0 else "LOSS",
+            "pnl_usdt": round(final_pnl_usdt, 2),
+            "result": "WIN" if (final_pnl_usdt > 0 or pnl_pct > 0) else "LOSS",
             "duration_min": duration_min,
             "reason": reason,
             "closed_at": datetime.now(timezone.utc).isoformat(),
@@ -114,7 +123,7 @@ class StateManager:
             self.trade_history = self.trade_history[: self.history_limit]
 
         self.total_trades += 1
-        if pnl_pct > 0:
+        if final_pnl_usdt > 0 or pnl_pct > 0:
             self.winning_trades += 1
 
     def sync_from_exchange(self, exchange_positions: list[dict], open_algo_orders: list[dict] = None):

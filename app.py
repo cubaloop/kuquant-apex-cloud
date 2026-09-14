@@ -146,11 +146,12 @@ async def dashboard():
     trade_rows = ""
     for t in s.get("trade_history", [])[:8]:
         color = "#238636" if t.get("result") == "WIN" else "#ff7b72"
+        usdt_str = f" | {t['pnl_usdt']:+.2f} USDT" if "pnl_usdt" in t else ""
         trade_rows += f"""
         <tr>
             <td>{t['pair']}</td>
             <td>{t['side']}</td>
-            <td style='color:{color}; font-weight:bold;'>{t['result']} ({t['pnl_pct']:+.2f}%)</td>
+            <td style='color:{color}; font-weight:bold;'>{t['result']} ({t['pnl_pct']:+.2f}%{usdt_str})</td>
             <td>{t.get('duration_min', 0)}m</td>
             <td style='font-size:0.85em; color:#8b949e;'>{t.get('reason','')[:60]}</td>
         </tr>"""
