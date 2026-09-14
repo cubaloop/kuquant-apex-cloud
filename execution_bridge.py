@@ -8,6 +8,7 @@ Uses Binance's native /fapi/v1/algoOrder endpoint for real STOP_MARKET and TAKE_
 import asyncio
 import logging
 import os
+from datetime import datetime, timezone
 
 import ccxt.async_support as ccxt
 
@@ -18,6 +19,7 @@ logger = logging.getLogger("execution_bridge")
 LEVERAGE = 5
 POSITION_EQUITY_PCT = 0.20   # 20% of free balance per trade
 MAX_POSITIONS = 2
+MIN_HOLDING_MINUTES = 20     # Strict anti-churn lock: cannot close early without profit or operator directive
 
 
 class ExecutionBridge:
@@ -222,6 +224,41 @@ class ExecutionBridge:
             return False
 
         pos = self._state.positions[pair]
+
+        # ── HARD PROGRAMMATIC ANTI-CHURN GUARDRAIL ──────────────────────────
+        # Prevent premature closing of positions within 20 minutes for minor noise.
+        # Trades are natively protected by Stop Loss on Binance. Closing prematurely
+        # burns round-trip fees (~$2.80) and destroys edge.
+        try:
+            opened_at = datetime.fromisoformat(pos.get("opened_at", ""))
+            duration_min = max(0, int((datetime.now(timezone.utc) - opened_at).total_seconds() // 60))
+        except Exception:
+            duration_min = 999
+
+        directive = (self._state.operator_directive or "").lower()
+        operator_manual_close = any(w in directive for w in ["cierra", "close", "cerrar", "liquidar", "sal"])
+
+        # Check estimated unrealized profit
+        try:
+            ticker = await self._exchange.fetch_ticker(pair)
+            curr_p = ticker.get("last") or pos.get("entry_price", 0)
+        except Exception:
+            curr_p = pos.get("entry_price", 0)
+
+        entry = pos.get("entry_price", 0)
+        size = pos.get("size", 0)
+        side = pos.get("side", "LONG")
+        est_pnl = (curr_p - entry) * size if side == "LONG" else (entry - curr_p) * size
+
+        # Reject early close unless in substantial profit (>= +$10 USDT) or operator commanded it
+        if not operator_manual_close and duration_min < MIN_HOLDING_MINUTES and est_pnl < 10.0:
+            logger.warning(
+                f"🛡️ ANTI-CHURN GUARD ENGAGED: Blocked premature CLOSE for {pair} "
+                f"(open {duration_min}m < {MIN_HOLDING_MINUTES}m | PnL: ${est_pnl:+.2f} USDT | reason: '{reason}'). "
+                f"Trade stays open and fully protected by native Binance Stop Loss."
+            )
+            return False
+
         try:
             await self._ensure_markets()
 
